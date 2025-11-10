@@ -17,9 +17,9 @@ set.seed(2648)
 ```{r}
 
 # Setup
-iter = 100 #10000
+iter = 10000 #10000
 
-# Function to test if there are duplicate birthdays in the group of n people.
+# Function to test if there are duplicate birthdays among a group of n people.
 
 dob_dup = function(n) {
   
@@ -28,7 +28,7 @@ dob_dup = function(n) {
     
 }
 
-# Simulating 10000 times for each group size between 2 and 50 and compute the probabilities across sample sizes.
+# Simulating 10000 times for each group size between 2 and 50, and compute the probabilities across sample sizes.
 
 sim_dob_dup = expand_grid(
     sample_size = 2:50,
@@ -47,11 +47,13 @@ sim_dob_dup |>
 sim_dob_dup |> 
   ggplot(aes(x = sample_size, y = prob)) +
   geom_point() +
-  geom_line()
+  geom_line() +
+  labs(y = "Probability of Duplicate Birthdays",
+       x = "Sample Size")
 
 ```
 
-comments
+We can conclude that the probability of two or more people sharing the same birthday increases as the sample size grows. The probability reaches about 50% when there are 23 people and rises to nearly 100% when the sample size reaches 50.
 
 
 ## Problem 2
@@ -62,9 +64,9 @@ comments
 
 n = 30
 sigma = 5
-iter = 50
+iter = 5000 #5000
 
-# Function for reporting mu hat and p value from t test.
+# Function to report mu hat and p value from a t-test.
 
 my_ttest = function(mu) {
   
@@ -79,7 +81,7 @@ my_ttest = function(mu) {
   
 }
 
-# Simulating 5000 times for mu from 1 to 6.
+# Simulating 5,000 times for mu ranging from 0 to 6.
 
 sim_ttest = expand_grid(
     mu = 0:6,
@@ -95,11 +97,13 @@ sim_ttest |>
   summarise(prop = mean(reject_h0)) |> 
   ggplot(aes(x = mu, y = prop)) +
   geom_point() +
-  geom_line()
+  geom_line() +
+  labs(x = expression(mu),
+       y = "Null Rejection Proportion")
 
 ```
 
-comment
+As the difference between 0 and the true value of $\mu$ increases, the effect size becomes larger, if the $\sigma$ remains constant. As a result, the larger effect size leads to greater statistical power. For $\mu=0$, the proportion of times the null hypothesis is rejected equals $\alpha$, regardless of the sample size.
 
 ```{r}
 
@@ -114,11 +118,131 @@ sim_ttest |>
                names_to = "type",
                values_to = "avg_mu_hat",
                names_prefix = "avg_mu_hat_") |> 
+  mutate(type = ifelse(type == "all", "All samples", "Rejected null samples")) |> 
   ggplot(aes(x = mu, y = avg_mu_hat, colour = type, shape = type)) +
   geom_point(alpha = 0.5, size = 4) +
-  geom_line(alpha = 0.5)
+  geom_line(alpha = 0.5) +
+  labs(x = expression(mu),
+       y = expression("Average of " * hat(mu)),
+       colour = NULL,
+       shape = NULL)
 
 ```
 
-comment
+* When $\mu=0$, the estimates $\hat{\mu}$s for which the null is rejected are distributed symmetrically around 0. Thus, the sample average of $\hat{\mu}$ is close to 0.
 
+* When $\mu$ is close to 0, for example $\mu=1$ in the plot, the samples that rejected $H_0$ are more likely to have larger $\hat{\mu}$s, which leads to the sample average of $\hat{\mu}$ larger than $\mu$.
+
+* When $\mu$ is much larger than 0, such as between 2 and 6 in the plot, most samples rejected $H_0$. Therefore, the sample average of $\hat{\mu}$ is close to $\mu$.
+
+
+## Problem 3
+
+```{r, message=FALSE, warning=FALSE}
+
+# Read and tidy the data
+origin_homi = read_csv(file = "./data/homicide-data.csv") 
+
+homicides = origin_homi |> 
+   mutate(state = toupper(state),
+          state = ifelse(city == "Tulsa", "OK", state),
+          city_state = str_c(city, ", ", state),
+          reported_date = case_match(reported_date,
+                                     201511018 ~ 20151018,
+                                     201511105 ~ 20151105,
+                                     .default = reported_date),
+          reported_date = ymd(reported_date),
+          victim_race = as.factor(victim_race),
+          victim_age = as.numeric(victim_age),
+          victim_sex = as.factor(victim_sex),
+          disposition = as.factor(disposition),
+          unsolved = ifelse(disposition %in% c("Open/No arrest", "Closed without arrest"), TRUE, FALSE))
+
+```
+
+The original data has ``r nrow(origin_homi)`` rows and ``r ncol(origin_homi)`` variables. Each record contains basic information about the victim, such as name, sex, age, and race, for each homicide case. In `disposition` variable, the cases were catagorized into "Closed by arrest", "Closed without arrest" and "Open/No arrest". Two invalid `reported_date` values were found in the raw data and corrected during the data tidying step. Additionally, one record from `Tulsa` was incorrectly labeled as being in Alabama (`AL`).
+
+**Table of the total number of homicides by city:**
+
+```{r}
+
+total_homi = homicides |> 
+  group_by(city_state) |>  
+  summarize(total_num = n())
+
+total_homi |> 
+  knitr::kable(col.names = c("City", "Number of Homicides"))
+
+```
+
+**Table of the number of unsolved homicides by city:**
+
+```{r}
+
+unsolved_homi = homicides |> 
+  filter(unsolved) |> 
+  group_by(city_state) |>  
+  summarize(unsolved_num = n())
+
+unsolved_homi |> 
+  knitr::kable(col.names = c("City", "Number of Unsolved Homicides"))
+  
+```
+
+**For the city of Baltimore, MD, use the `prop.test` to estimate the proportion of unsolved homicides and its 95% CI.**
+
+```{r}
+
+all_homi = inner_join(unsolved_homi, total_homi, by = "city_state" )
+
+baltimore_homi = all_homi |> 
+  filter(city_state == "Baltimore, MD")
+
+baltimore_prop = prop.test(baltimore_homi$unsolved_num, baltimore_homi$total_num) |> 
+  broom::tidy() |> 
+  select(estimate, conf.low, conf.high) |> 
+  janitor::clean_names()
+
+baltimore_prop |> 
+  knitr::kable(col.names = c("Estimate", "Lower 95% CI", "Upper 95% CI"),
+               digits = 3)
+
+```
+
+**Apply the proportion estimation to all cities.**
+
+```{r}
+
+# Create function to estimate the proportion and 95% CI.
+
+my_proptest = function(x, n) {
+
+  prop = prop.test(x, n) |> 
+  broom::tidy() |> 
+  select(estimate, conf.low, conf.high) |> 
+  janitor::clean_names()
+  
+}
+
+# Apply it to all cities.
+
+all_prop = all_homi |> 
+  mutate(prop_test = map2(unsolved_num, total_num, my_proptest)) |> 
+  unnest(cols = prop_test) |> 
+  select(city_state, estimate, conf_low, conf_high)
+
+# Make a plot to show the estimates and CIs for each city.
+
+all_prop |> 
+  ggplot(aes(x = fct_reorder(city_state, estimate), y = estimate)) +
+  geom_point() +
+  geom_errorbar(mapping = aes(ymax = conf_high, ymin = conf_low)) +
+  labs(
+    title = "Proportion of Unsolved Homicides with 95% Confidence Intervals by City",
+    x = "City",
+    y = "Proportion of Unsolved Homicides",
+    caption = "Data from The Washington Post"
+  ) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+```
