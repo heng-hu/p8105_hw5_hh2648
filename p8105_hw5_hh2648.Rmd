@@ -34,8 +34,7 @@ sim_dob_dup = expand_grid(
     sample_size = 2:50,
     iter = 1:iter
   ) |> 
-  mutate(dob_dup_fl = map(sample_size, dob_dup)) |> 
-  unnest(cols = dob_dup_fl) |> 
+  mutate(dob_dup_fl = map_lgl(sample_size, dob_dup)) |> 
   group_by(sample_size) |> 
   summarise(prob = mean(dob_dup_fl))
 
